@@ -18,8 +18,10 @@ float sourceI = 0.0;
 
 /////////////////////// Measurement counters //////////////////
 
-unsigned long measuredCapacity = 0;
-unsigned int measurementDurationSeconds = 0;
+bool isMeasuringCapacity = false;
+
+unsigned long measuredCapacityMilliWatts = 0;
+float measurementDurationSeconds = 0;
 
 
 /////////////////////// Beeping /////////////////////////////
@@ -107,12 +109,13 @@ hd44780_I2Cexp lcd(0x3F);
 
 
 void updateScreen() {
-  
+
+  unsigned long nowMillis = millis();
   char linebuffer[20];
   
   //lcd.clear(); // we'll use spaces instead of clearing to avoid subtle blinks
   lcd.home();
-  sprintf(linebuffer, "In: %.2fV %.2fA ", sourceU);
+  sprintf(linebuffer, "In: %.2fV %.2fA ", sourceU, sourceI);
   lcd.print(linebuffer);
   
   lcd.setCursor(0, 1);
@@ -125,15 +128,37 @@ void updateScreen() {
   
   lcd.setCursor(0, 3);
 
-  // TODO Capacity: 10000mWh / Time: 00:00:00
-  int measurementSeconds = measurementDurationSeconds % 60;
-  int measurementMinutes = int(measurementDurationSeconds / 60) % 60;
-  int measurementHours = int(measurementDurationSeconds / 3600);
-  sprintf(linebuffer, "Time: %02d:%02d:%02d  ", measurementHours, measurementMinutes, measurementSeconds);
-  lcd.print(linebuffer);
+  if ((nowMillis % 6000) < 3000) { // blinking cursor
+    
+    int measurementSeconds = int(measurementDurationSeconds) % 60;
+    int measurementMinutes = int(measurementDurationSeconds / 60) % 60;
+    int measurementHours = int(measurementDurationSeconds / 3600);
+    
+    sprintf(linebuffer, "Time: %02d:%02d:%02d  ", measurementHours, measurementMinutes, measurementSeconds);
+    lcd.print(linebuffer);
+  } else {
+    sprintf(linebuffer, "  %6dmAh0    ", measuredCapacityMilliWatts);
+    lcd.print(linebuffer);
+  }
 
-  lcd.setCursor(13, 1+currentSetting);
-  lcd.print("<<<");
+  if ((nowMillis % 1000) < 500) { // blinking cursor
+    lcd.setCursor(13, 1+currentSetting);
+    lcd.print("<<<");
+  }
+
+  if (isMeasuringCapacity) {
+    lcd.setCursor(15, 4);
+    
+    if ((nowMillis % 2000) < 500) { // spinner
+      lcd.print('|');
+    } else if ((nowMillis % 2000) < 1000) {
+      lcd.print('/');
+    } else if ((nowMillis % 2000) < 1500) {
+      lcd.print('-');
+    } else {
+      lcd.print('/');
+    }
+  }
 }
 
 
@@ -185,8 +210,11 @@ void setDrawCurrent(float amps) {
 
 /////////////////////// Measurement Procedures ///////////////
 
-bool isMeasuringCapacity = false;
+#define MEASUREMENT_INTERVAL_MILLIS 500
+
+
 unsigned long nextMeasurementAtMillis = 0;
+
 
 
 void capacityMeasurementsUpdate() {
@@ -196,12 +224,11 @@ void capacityMeasurementsUpdate() {
   } else {
     setDrawCurrent(0);
   }
-  
+
   if (nextMeasurementAtMillis < millis()) {
-    nextMeasurementAtMillis = millis() + 1000;
     
     if (isMeasuringCapacity) {
-      measurementDurationSeconds++;
+      measurementDurationSeconds += MEASUREMENT_INTERVAL_MILLIS / 1000.0;
     }
     
     // TODO read voltage and current of load
@@ -209,6 +236,7 @@ void capacityMeasurementsUpdate() {
     // TODO if load voltage is under cutoff threshold, turn off
     
     updateScreen();
+    nextMeasurementAtMillis += MEASUREMENT_INTERVAL_MILLIS;
   }
 }
 
@@ -250,7 +278,7 @@ void loop() {
 
   if (wasStartStopPressed()) {
     isMeasuringCapacity = !isMeasuringCapacity;
-    beep(1650, 1000);
+    beep(1650, 800);
   }
   capacityMeasurementsUpdate();
 
