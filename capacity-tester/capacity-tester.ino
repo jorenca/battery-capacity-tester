@@ -2,6 +2,7 @@
 #include <hd44780.h>
 #include <hd44780ioClass/hd44780_I2Cexp.h>
 #include <AiEsp32RotaryEncoder.h>
+#include <ToneESP32.h>
 
 
 /////////////////////// Current settings //////////////////////
@@ -14,6 +15,19 @@ float minU = 3.2; // Volts
 
 float sourceU = 0.0;
 float sourceI = 0.0;
+
+
+/////////////////////// Beeping /////////////////////////////
+
+#define BUZZER_PIN 27
+#define BUZZER_CHANNEL 0
+
+ToneESP32 buzzer(BUZZER_PIN, BUZZER_CHANNEL);
+
+
+void beep(unsigned int hz, unsigned int milliseconds) {
+  buzzer.tone(hz, milliseconds);
+}
 
 
 /////////////////////// Rotary encoder ///////////////////////
@@ -37,7 +51,7 @@ void IRAM_ATTR readEncoderISR() {
 }
 
 
-/////////////////////// Rotary encoder ///////////////////////
+/////////////////////// LCD display //////////////////////////
 
 hd44780_I2Cexp lcd(0x3F);
 
@@ -77,7 +91,7 @@ void updateScreen() {
 }
 
 
-/////////////////////// Glue logic ///////////////////////////
+/////////////////////// LCD display //////////////////////////
 
 void settingsSelect(int index) {
   currentSetting = index;
@@ -92,6 +106,7 @@ void settingsSelect(int index) {
     rotaryEncoder.setEncoderValue(minU * 10);
   }
   
+  beep(1500, 40);
   updateScreen();
 }
 
@@ -101,7 +116,8 @@ void settingsUpdate() {
   } else { // set minU
     minU = rotaryEncoder.readEncoder() / 10.0;
   }
-
+  
+  beep(1000, 20);
   updateScreen();
 }
 
@@ -111,7 +127,6 @@ void settingsUpdate() {
 void setup() {
   Serial.begin(115200);
   
-  //lcd.init();
   lcd.begin(16, 4);
   lcd.backlight();
   
