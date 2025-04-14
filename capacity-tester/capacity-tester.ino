@@ -107,39 +107,29 @@ hd44780_I2Cexp lcd(0x3F);
 
 
 void updateScreen() {
-  // TODO CONSIDER REWRITING USING sprintf
+  
+  char linebuffer[20];
   
   //lcd.clear(); // we'll use spaces instead of clearing to avoid subtle blinks
   lcd.home();
-  lcd.print("In: ");
-  lcd.print(sourceU);
-  lcd.print("V ");
-  lcd.print(sourceI);
-  lcd.print('A');
+  sprintf(linebuffer, "In: %.2fV %.2fA ", sourceU);
+  lcd.print(linebuffer);
   
-  lcd.print("   "); // avoids issues with newline
   lcd.setCursor(0, 1);
+  sprintf(linebuffer, "Imax: %.1fA      ", maxI);
+  lcd.print(linebuffer);
 
-  lcd.print("Imax: ");
-  lcd.print(maxI);
-  lcd.print('A');
-  
-  lcd.print("      "); // avoids issues with newline
   lcd.setCursor(0, 2);
-
-  lcd.print("Ucut: ");
-  lcd.print(minU);
-  lcd.print('V');
+  sprintf(linebuffer, "Ucut: %.1fV      ", minU);
+  lcd.print(linebuffer);
   
-  lcd.print("      "); // avoids issues with newline
   lcd.setCursor(0, 3);
 
   // TODO Capacity: 10000mWh / Time: 00:00:00
   int measurementSeconds = measurementDurationSeconds % 60;
   int measurementMinutes = int(measurementDurationSeconds / 60) % 60;
   int measurementHours = int(measurementDurationSeconds / 3600);
-  char linebuffer[20];
-  sprintf(linebuffer, "Time: %02d:%02d:%02d", measurementHours, measurementMinutes, measurementSeconds);
+  sprintf(linebuffer, "Time: %02d:%02d:%02d  ", measurementHours, measurementMinutes, measurementSeconds);
   lcd.print(linebuffer);
 
   lcd.setCursor(13, 1+currentSetting);
@@ -176,8 +166,6 @@ void settingsUpdate() {
   beep(1000, 20);
   updateScreen();
 }
-
-
 
 
 
