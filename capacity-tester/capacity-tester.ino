@@ -2,7 +2,6 @@
 #include <hd44780.h>
 #include <hd44780ioClass/hd44780_I2Cexp.h>
 #include <AiEsp32RotaryEncoder.h>
-#include <ToneESP32.h>
 
 
 /////////////////////// Current settings //////////////////////
@@ -17,16 +16,34 @@ float sourceU = 0.0;
 float sourceI = 0.0;
 
 
+/////////////////////// Measurement counters //////////////////
+
+unsigned long measuredCapacity = 0;
+unsigned int measurementDurationSeconds = 0;
+
+
 /////////////////////// Beeping /////////////////////////////
 
 #define BUZZER_PIN 27
 #define BUZZER_CHANNEL 0
 
-ToneESP32 buzzer(BUZZER_PIN, BUZZER_CHANNEL);
+unsigned long beepUntilMillis = 0;
 
+void beepSetup() {
+  ledcAttachPin(BUZZER_PIN, BUZZER_CHANNEL);
+}
 
-void beep(unsigned int hz, unsigned int milliseconds) {
-  buzzer.tone(hz, milliseconds);
+void beep(unsigned int hz, unsigned int durationMilliseconds) {
+  ledcSetup(BUZZER_CHANNEL, hz, 8);
+  ledcWrite(BUZZER_CHANNEL, 127);
+  beepUntilMillis = millis() + durationMilliseconds;
+}
+
+void beepUpdate() {
+  if (beepUntilMillis > 0 && beepUntilMillis < millis()) {
+    ledcWrite(BUZZER_CHANNEL, 0);
+    beepUntilMillis = 0;
+  }
 }
 
 
@@ -118,23 +135,15 @@ void updateScreen() {
   lcd.setCursor(0, 3);
 
   // TODO Capacity: 10000mWh / Time: 00:00:00
+  int measurementSeconds = measurementDurationSeconds % 60;
+  int measurementMinutes = int(measurementDurationSeconds / 60) % 60;
+  int measurementHours = int(measurementDurationSeconds / 3600);
+  char linebuffer[20];
+  sprintf(linebuffer, "Time: %02d:%02d:%02d", measurementHours, measurementMinutes, measurementSeconds);
+  lcd.print(linebuffer);
 
   lcd.setCursor(13, 1+currentSetting);
   lcd.print("<<<");
-}
-
-
-/////////////////////// Current control //////////////////////
-
-#define CURRENT_SET_DAC_PIN 25
-
-float mapfloat(float x, float in_min, float in_max, float out_min, float out_max) {
-  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
-}
-
-void setDrawCurrent(float amps) {
-    byte dacValue = floor(mapfloat(amps, 0, 3.3, 0, 255)); // [0, 255] range
-    dacWrite(CURRENT_SET_DAC_PIN, dacValue);
 }
 
 
@@ -160,14 +169,59 @@ void settingsSelect(int index) {
 void settingsUpdate() {
     if (currentSetting == 0) { // set maxI
     maxI = rotaryEncoder.readEncoder() / 10.0;
-    
-    setDrawCurrent(maxI); // FIXME FOR TESTING ONLY
   } else { // set minU
     minU = rotaryEncoder.readEncoder() / 10.0;
   }
   
   beep(1000, 20);
   updateScreen();
+}
+
+
+
+
+
+/////////////////////// Current control //////////////////////
+
+#define CURRENT_SET_DAC_PIN 25
+
+float mapfloat(float x, float in_min, float in_max, float out_min, float out_max) {
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
+void setDrawCurrent(float amps) {
+    int dacValue = floor(mapfloat(amps, 0, 3.3, 0, 255)); // [0, 255] range
+    dacWrite(CURRENT_SET_DAC_PIN, dacValue);
+}
+
+
+/////////////////////// Measurement Procedures ///////////////
+
+bool isMeasuringCapacity = false;
+unsigned long nextMeasurementAtMillis = 0;
+
+
+void capacityMeasurementsUpdate() {
+  
+  if (isMeasuringCapacity) {
+    setDrawCurrent(maxI);
+  } else {
+    setDrawCurrent(0);
+  }
+  
+  if (nextMeasurementAtMillis < millis()) {
+    nextMeasurementAtMillis = millis() + 1000;
+    
+    if (isMeasuringCapacity) {
+      measurementDurationSeconds++;
+    }
+    
+    // TODO read voltage and current of load
+
+    // TODO if load voltage is under cutoff threshold, turn off
+    
+    updateScreen();
+  }
 }
 
 
@@ -191,6 +245,7 @@ void setup() {
   rotaryEncoder.setup(readEncoderISR);
   settingsSelect(0);
 
+  beepSetup();
 
 }
 
@@ -206,8 +261,12 @@ void loop() {
   }
 
   if (wasStartStopPressed()) {
+    isMeasuringCapacity = !isMeasuringCapacity;
     beep(1650, 1000);
   }
+  capacityMeasurementsUpdate();
+
+  beepUpdate();
 
 
 }
