@@ -2,6 +2,7 @@
 #include <hd44780.h>
 #include <hd44780ioClass/hd44780_I2Cexp.h>
 #include <AiEsp32RotaryEncoder.h>
+#include <Adafruit_INA219.h>
 
 
 /////////////////////// Current settings //////////////////////
@@ -20,7 +21,7 @@ float sourceI = 0.0;
 
 bool isMeasuringCapacity = false;
 
-unsigned long measuredCapacityMilliWatts = 0;
+float measuredCapacityMilliWattHours = 0.0;
 float measurementDurationSeconds = 0;
 
 
@@ -33,6 +34,7 @@ unsigned long beepUntilMillis = 0;
 
 void beepSetup() {
   ledcAttachPin(BUZZER_PIN, BUZZER_CHANNEL);
+    ledcWrite(BUZZER_CHANNEL, 0);
 }
 
 void beep(unsigned int hz, unsigned int durationMilliseconds) {
@@ -137,7 +139,7 @@ void updateScreen() {
     sprintf(linebuffer, "Time: %02d:%02d:%02d  ", measurementHours, measurementMinutes, measurementSeconds);
     lcd.print(linebuffer);
   } else {
-    sprintf(linebuffer, "  %6dmAh0    ", measuredCapacityMilliWatts);
+    sprintf(linebuffer, " %6.1f mWh   ", measuredCapacityMilliWattHours);
     lcd.print(linebuffer);
   }
 
@@ -161,6 +163,11 @@ void updateScreen() {
   }
 }
 
+void lcdHalt(const char* msg) {
+  lcd.home();
+  lcd.print(msg);
+}
+
 
 /////////////////////// Settings input ///////////////////////
 
@@ -172,7 +179,7 @@ void settingsSelect(int index) {
     rotaryEncoder.setEncoderValue(maxI * 10);
     rotaryEncoder.disableAcceleration();
   } else { // set minU
-    rotaryEncoder.setBoundaries(1, 300, false); //minValue, maxValue, circleValues true|false (when max go to min and vice versa)
+    rotaryEncoder.setBoundaries(1, 200, false); //minValue, maxValue, circleValues true|false (when max go to min and vice versa)
     rotaryEncoder.setAcceleration(10);
     rotaryEncoder.setEncoderValue(minU * 10);
   }
@@ -212,6 +219,8 @@ void setDrawCurrent(float amps) {
 
 #define MEASUREMENT_INTERVAL_MILLIS 500
 
+Adafruit_INA219 currentSensor;
+
 
 unsigned long nextMeasurementAtMillis = 0;
 
@@ -225,19 +234,32 @@ void capacityMeasurementsUpdate() {
     setDrawCurrent(0);
   }
 
-  if (nextMeasurementAtMillis < millis()) {
-    
-    if (isMeasuringCapacity) {
-      measurementDurationSeconds += MEASUREMENT_INTERVAL_MILLIS / 1000.0;
-    }
-    
-    // TODO read voltage and current of load
-
-    // TODO if load voltage is under cutoff threshold, turn off
-    
-    updateScreen();
-    nextMeasurementAtMillis += MEASUREMENT_INTERVAL_MILLIS;
+  if (nextMeasurementAtMillis > millis()) {
+    return;
   }
+  
+  sourceU = currentSensor.getBusVoltage_V();
+  sourceI = currentSensor.getCurrent_mA() / 1000.0;
+  if (sourceI < 0.0 && sourceI > -0.5) sourceI = 0.0; 
+  
+  float power_mW = currentSensor.getPower_mW();
+
+  
+  if (isMeasuringCapacity) {
+    float measurementSeconds = MEASUREMENT_INTERVAL_MILLIS / 1000.0;
+    measuredCapacityMilliWattHours += power_mW * measurementSeconds / 3600.0;
+    measurementDurationSeconds += measurementSeconds;
+
+    // If load voltage is under cutoff threshold, turn off
+    if (sourceU < minU) {
+      beep(1750, 1000);
+      setDrawCurrent(0);
+      isMeasuringCapacity = false;
+    }
+  }
+  
+  updateScreen();
+  nextMeasurementAtMillis += MEASUREMENT_INTERVAL_MILLIS;
 }
 
 
@@ -251,6 +273,12 @@ void setup() {
   
   lcd.begin(16, 4);
   lcd.backlight();
+  
+  if (!currentSensor.begin()) {
+    Serial.println("HALT: Failed to find INA219 measurement chip detected on I2C bus");
+    lcdHalt("No measurement chip on I2C");
+    while (1) { delay(10); }
+  }
 
   pinMode(START_STOP_BUTTON_PIN, INPUT_PULLUP);
   attachInterrupt(START_STOP_BUTTON_PIN, startStopButtonPressed_ISR, CHANGE);
