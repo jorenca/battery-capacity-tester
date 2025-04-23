@@ -204,6 +204,7 @@ void settingsUpdate() {
 /////////////////////// Current control //////////////////////
 
 #define CURRENT_SET_DAC_PIN 25
+#define LOAD_DISABLE_PIN 32
 
 float mapfloat(float x, float in_min, float in_max, float out_min, float out_max) {
   return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
@@ -212,6 +213,7 @@ float mapfloat(float x, float in_min, float in_max, float out_min, float out_max
 void setDrawCurrent(float amps) {
     int dacValue = floor(mapfloat(amps, 0, 3.3, 0, 255)); // [0, 255] range
     dacWrite(CURRENT_SET_DAC_PIN, dacValue);
+    digitalWrite(LOAD_DISABLE_PIN, amps < 0.01);
 }
 
 
@@ -269,6 +271,7 @@ void capacityMeasurementsUpdate() {
 void setup() {
   Serial.begin(115200);
 
+  pinMode(LOAD_DISABLE_PIN, OUTPUT);
   setDrawCurrent(0);
   
   lcd.begin(16, 4);
