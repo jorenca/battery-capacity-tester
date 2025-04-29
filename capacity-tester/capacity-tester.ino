@@ -109,6 +109,39 @@ bool wasStartStopPressed() {
 
 hd44780_I2Cexp lcd(0x3F);
 
+byte CHAR_HOURGLASS_1[8] = {
+  0b11100,
+  0b11001,
+  0b10011,
+  0b00000,
+  0b00000,
+  0b11001,
+  0b10011,
+  0b00111
+};
+
+byte CHAR_HOURGLASS_2[8] = {
+  0b11100,
+  0b11001,
+  0b10011,
+  0b00011,
+  0b11000,
+  0b11001,
+  0b10011,
+  0b00111
+};
+
+byte CHAR_LOAD_ACTIVE[8] = {
+  0b11111,
+  0b10111,
+  0b10011,
+  0b10001,
+  0b10001,
+  0b10011,
+  0b10111,
+  0b11111
+};
+
 
 void updateScreen() {
 
@@ -143,22 +176,19 @@ void updateScreen() {
     lcd.print(linebuffer);
   }
 
-  if ((nowMillis % 1000) < 500) { // blinking cursor
+  if ((nowMillis % 1500) < 1000) { // blinking cursor
     lcd.setCursor(13, 1+currentSetting);
     lcd.print("<<<");
   }
 
   if (isMeasuringCapacity) {
-    lcd.setCursor(15, 4);
+    lcd.setCursor(14, 4);
+      lcd.write(3); // CHAR_LOAD_ACTIVE
     
-    if ((nowMillis % 2000) < 500) { // spinner
-      lcd.print('|');
-    } else if ((nowMillis % 2000) < 1000) {
-      lcd.print('/');
-    } else if ((nowMillis % 2000) < 1500) {
-      lcd.print('-');
+    if ((nowMillis % 1000) < 500) { // spinner
+      lcd.write(1); // CHAR_HOURGLASS_1
     } else {
-      lcd.print('/');
+      lcd.write(2); // CHAR_HOURGLASS_2
     }
   }
 }
@@ -175,7 +205,7 @@ void settingsSelect(int index) {
   currentSetting = index;
 
   if (currentSetting == 0) { // set maxI
-    rotaryEncoder.setBoundaries(1, 30, false); //minValue, maxValue, circleValues true|false (when max go to min and vice versa)
+    rotaryEncoder.setBoundaries(1, 25, false); //minValue, maxValue, circleValues true|false (when max go to min and vice versa)
     rotaryEncoder.setEncoderValue(maxI * 10);
     rotaryEncoder.disableAcceleration();
   } else { // set minU
@@ -211,7 +241,7 @@ float mapfloat(float x, float in_min, float in_max, float out_min, float out_max
 }
 
 void setDrawCurrent(float amps) {
-    int dacValue = floor(mapfloat(amps, 0, 3.3, 0, 255)); // [0, 255] range
+    int dacValue = floor(mapfloat(amps, 0, 2.5, 0, 255)); // [0, 255] range
     dacWrite(CURRENT_SET_DAC_PIN, dacValue);
     digitalWrite(LOAD_DISABLE_PIN, amps < 0.01);
 }
@@ -240,7 +270,7 @@ void capacityMeasurementsUpdate() {
     return;
   }
   
-  sourceU = currentSensor.getBusVoltage_V();
+  sourceU = currentSensor.getBusVoltage_V() + currentSensor.getShuntVoltage_mV()/1000.0;
   sourceI = currentSensor.getCurrent_mA() / 1000.0;
   if (sourceI < 0.0 && sourceI > -0.5) sourceI = 0.0; 
   
@@ -265,6 +295,27 @@ void capacityMeasurementsUpdate() {
 }
 
 
+/////////////////////// Reporting procedures /////////////////
+
+
+#define REPORTING_INTERVAL_MILLIS 1000
+
+unsigned long nextReportAtMillis = REPORTING_INTERVAL_MILLIS;
+
+
+void reportingUpdate() {
+  
+  if (nextReportAtMillis > millis()) {
+    return;
+  }
+
+  char message[50];
+  sprintf(message, "sourceU:%.2f, sourceI:%.2f", sourceU, sourceI);
+  Serial.println(message);
+  
+  nextReportAtMillis += REPORTING_INTERVAL_MILLIS;
+}
+
 
 /////////////////////// Arduino procedures ///////////////////
 
@@ -276,6 +327,10 @@ void setup() {
   
   lcd.begin(16, 4);
   lcd.backlight();
+  lcd.createChar(1, CHAR_HOURGLASS_1);
+  lcd.createChar(2, CHAR_HOURGLASS_2);
+  lcd.createChar(3, CHAR_LOAD_ACTIVE);
+  
   
   if (!currentSensor.begin()) {
     Serial.println("HALT: Failed to find INA219 measurement chip detected on I2C bus");
@@ -312,7 +367,8 @@ void loop() {
     beep(1650, 800);
   }
   capacityMeasurementsUpdate();
-
+  reportingUpdate();
+  
   beepUpdate();
 
 
