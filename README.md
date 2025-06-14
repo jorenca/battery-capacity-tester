@@ -19,10 +19,10 @@ Electronic dummy load and capacity tester built around an ESP32 arduino.
   * Banana connectors, etc.
 
 
-![The finished dummy load device](./load finished.jpg)
+![The finished dummy load device](./load%20finished.jpg)
 
 ### ESP32 Connections
-![ESP32 Connections diagram](./esp32 connections.png)
+![ESP32 Connections diagram](./esp32%20connections.png)
 
 ### Dummy load schematic
 ![Schematic for electronic dummy load module](./load%20schematic.png)
